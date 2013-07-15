@@ -1,0 +1,40 @@
+#!/usr/bin/ruby1.9.1
+
+require "rest-client"
+require "base64"
+require "gssapi"
+require "uri"
+require "socket"
+require "json"
+require "optparse"
+
+# TODO: --help
+
+feedback = JSON.parse(ARGF.read)
+
+uri = URI.parse `puavo-resolve-api-server` + "/v3/whoami"
+
+gsscli = GSSAPI::Simple.new(uri.host, "HTTP")
+token = gsscli.init_context(nil, :delegate => true)
+headers = {"Authorization" => "Negotiate #{Base64.strict_encode64(token)}"}
+
+begin
+    user = JSON.parse(RestClient.get(uri.to_s, headers))
+rescue RestClient::Unauthorized => err
+    STDERR.puts err
+    Process.exit 1
+end
+
+feedback.merge!(
+    "type" => "feedback",
+    "user" => user
+)
+
+udp_socket = UDPSocket.new
+udp_socket.send(
+    feedback.to_json,
+    0,
+    uri.host,
+    3858
+)
+
